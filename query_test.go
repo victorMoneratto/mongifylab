@@ -2,7 +2,6 @@ package mongifylab_test
 
 import (
 	"database/sql"
-	"math/rand"
 	"os"
 	"testing"
 
@@ -33,27 +32,44 @@ func TestListTables(t *testing.T) {
 	}
 }
 
-func TestRowsChan(t *testing.T) {
-	tables, err := mongifylab.ListTables(db)
-	if err != nil {
-		t.Fail()
-	}
-	table := tables[rand.Intn(len(tables))]
-
-	rows, err := db.Query("SELECT * FROM " + table + " WHERE ROWNUM <= 2")
+func TestRowSliceChan(t *testing.T) {
+	rows, err := db.Query("SELECT SIGLA, NOME FROM LE01ESTADO WHERE ROWNUM <= 2")
 	if err != nil {
 		t.Fail()
 	}
 
-	rowCh, err := mongifylab.RowsChan(rows)
+	rowCh, err := mongifylab.RowSliceChan(rows)
 	if err != nil {
 		t.Fail()
 	}
 
 	for i := 0; i < 2; i++ {
 		select {
-		case rowCh := <-rowCh:
-			if rowCh == nil {
+		case row := <-rowCh:
+			if row == nil || row[0] == nil || row[1] == nil {
+				t.Error()
+			}
+		case <-time.After(time.Millisecond * 100):
+			t.Error()
+		}
+	}
+}
+
+func TestRowMapChan(t *testing.T) {
+	rows, err := db.Query("SELECT NOME, POPULACAO FROM LE02 WHERE ROWNUM <= 2")
+	if err != nil {
+		t.Fail()
+	}
+
+	rowCh, err := mongifylab.RowMapChan(rows)
+	if err != nil {
+		t.Fail()
+	}
+
+	for i := 0; i < 2; i++ {
+		select {
+		case row := <-rowCh:
+			if row == nil || row["NOME"] == nil || row["POPULACAO"] == nil {
 				t.Error()
 			}
 		case <-time.After(time.Millisecond * 100):
