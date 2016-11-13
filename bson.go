@@ -9,11 +9,13 @@ import (
 
 // CreateCollectionScript returns the script for creating and populating the
 // a corresponding collection on mongodb
-func CreateCollectionScript(db *sql.DB, table string) (string, error) {
+func CreateCollectionScript(db *sql.DB, table TableNode) (string, error) {
 	var buf bytes.Buffer
-	buf.WriteString("db.createCollection(\"" + table + "\")\n")
 
-	rows, err := db.Query("SELECT * FROM " + table)
+	name := table.Name
+	buf.WriteString("db.createCollection(\"" + name + "\")\n")
+
+	rows, err := db.Query("SELECT * FROM " + name)
 	if err != nil {
 		return "", err
 	}
@@ -23,7 +25,7 @@ func CreateCollectionScript(db *sql.DB, table string) (string, error) {
 		return "", err
 	}
 
-	pks, _, _, err := QueryConstraints(db, table)
+	pks, _, _, err := QueryConstraints(db, name)
 	if err != nil {
 		return "", err
 	}
@@ -36,7 +38,7 @@ func CreateCollectionScript(db *sql.DB, table string) (string, error) {
 
 	// for each row on the table
 	for rowMap := range rowMapChan {
-		buf.WriteString("db." + table + ".insert({_id:{")
+		buf.WriteString("db." + name + ".insert({_id:{")
 
 		// Put all primary keys in _id (there's always one field or more)
 		writeFields(&buf, rowMap, pks)
