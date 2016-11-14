@@ -115,17 +115,6 @@ func allocateForScan(size int) ([]interface{}, error) {
 	return ptrs, nil
 }
 
-// ConsInfo is a representation for column constraint
-// WARNING: This ignores "overlapping"" foreign keys
-// type ConsInfo struct {
-// 	Column   string
-// 	PK       bool
-// 	Unique   bool
-// 	FKTable  string
-// 	FKColumn string
-// 	// Check    string //TODO: Check
-// }
-
 // FKInfo is the relation between foreign key columns
 type FKInfo struct {
 	Table   string

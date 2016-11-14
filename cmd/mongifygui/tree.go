@@ -70,7 +70,7 @@ func (a *TableNodeAdapter) Root() *TableNode {
 }
 
 func (a *TableNodeAdapter) Size(t gxui.Theme) math.Size {
-	return math.Size{W: 200, H: 20}
+	return math.Size{W: 150, H: 20}
 }
 
 func NewTableNodeAdapter() *TableNodeAdapter {
@@ -84,7 +84,18 @@ func (a *TableNodeAdapter) RemakeFromDependencies(dp *mongifylab.DependencyTree)
 	root := a.Root()
 	root.Children = nil
 	for _, dpRoot := range dp.Roots {
-		root.Add(dpRoot.Name)
+		a.addTable(root, dpRoot)
 	}
 	a.DataChanged(true)
+}
+
+func (a *TableNodeAdapter) addTable(parent *TableNode, table *mongifylab.TableNode) {
+	node := parent.Add(table.Name)
+	for _, embedded := range table.Embedded {
+		a.addTable(node, embedded)
+	}
+
+	for _, ref := range table.Referenced {
+		node.Add("-> " + ref)
+	}
 }

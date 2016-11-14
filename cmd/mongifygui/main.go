@@ -58,7 +58,7 @@ func application(driver gxui.Driver) {
 	layout.AddChild(newTree(theme))
 	layout.AddChild(newPanel(theme, driver, overlay, tables))
 
-	window := theme.CreateWindow(854, 480, "Mongify")
+	window := theme.CreateWindow(960, 540, "Mongify")
 	window.AddChild(layout)
 	window.AddChild(overlay)
 	window.SetPadding(math.CreateSpacing(10))
@@ -180,9 +180,9 @@ func newPanel(theme gxui.Theme, driver gxui.Driver, overlay gxui.BubbleOverlay, 
 	// Code
 	//
 	code = theme.CreateCodeEditor()
-	codeLabel := theme.CreateLabel()
-	codeLabel.SetFont(labelFont)
-	codeLabel.SetText("Output:")
+	// codeLabel := theme.CreateLabel()
+	// codeLabel.SetFont(labelFont)
+	// codeLabel.SetText("Output:")
 
 	copyClip := theme.CreateButton()
 	copyClip.SetText("Copy")
@@ -202,9 +202,9 @@ func newPanel(theme gxui.Theme, driver gxui.Driver, overlay gxui.BubbleOverlay, 
 	})
 
 	table.SetChildAt(1, 2, 11, 8, code)
-	table.SetChildAt(0, 2, 1, 1, codeLabel)
-	table.SetChildAt(0, 3, 1, 1, copyClip)
-	table.SetChildAt(0, 4, 1, 1, save)
+	// table.SetChildAt(0, 2, 1, 1, codeLabel)
+	table.SetChildAt(0, 2, 1, 1, copyClip)
+	table.SetChildAt(0, 3, 1, 1, save)
 
 	panel := theme.CreatePanelHolder()
 	panel.AddPanel(table, "Tables")

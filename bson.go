@@ -9,7 +9,7 @@ import (
 
 // CreateCollectionScript returns the script for creating and populating the
 // a corresponding collection on mongodb
-func CreateCollectionScript(db *sql.DB, table TableNode) (string, error) {
+func CreateCollectionScript(db *sql.DB, table *TableNode) (string, error) {
 	var buf bytes.Buffer
 
 	name := table.Name
