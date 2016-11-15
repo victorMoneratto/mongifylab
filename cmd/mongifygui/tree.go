@@ -83,7 +83,7 @@ func NewTableNodeAdapter() *TableNodeAdapter {
 func (a *TableNodeAdapter) RemakeFromDependencies(dp *mongifylab.DependencyTree) {
 	root := a.Root()
 	root.Children = nil
-	for _, dpRoot := range dp.Roots {
+	for _, dpRoot := range dp.Tables {
 		a.addTable(root, dpRoot)
 	}
 	a.DataChanged(true)

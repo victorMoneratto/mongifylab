@@ -1,6 +1,7 @@
 package mongifylab
 
 import (
+	"bytes"
 	"database/sql"
 	"log"
 )
@@ -117,15 +118,14 @@ func allocateForScan(size int) ([]interface{}, error) {
 
 // FKInfo is the relation between foreign key columns
 type FKInfo struct {
-	Table   string
-	Columns []string
-
-	ForeignTable   string
+	// Table   string
+	// ForeignTable   string
+	Columns        []string
 	ForeignColumns []string
 }
 
 // QueryConstraints returns a map relating the column name to all it's constraints
-func QueryConstraints(db *sql.DB, table string) (pks []string, fks []FKInfo, uns [][]string, err error) {
+func QueryConstraints(db *sql.DB, table string) (pks []string, fks map[string]FKInfo, uns [][]string, err error) {
 	query := `SELECT CONS.CONSTRAINT_NAME, CONS.CONSTRAINT_TYPE, COLS.COLUMN_NAME, FK.TABLE_NAME, FK.COLUMN_NAME
 	FROM USER_CONSTRAINTS CONS
 	LEFT JOIN USER_CONS_COLUMNS COLS ON CONS.CONSTRAINT_NAME = COLS.CONSTRAINT_NAME
@@ -144,7 +144,8 @@ func QueryConstraints(db *sql.DB, table string) (pks []string, fks []FKInfo, uns
 
 	// reference FK and UN constraints by its name
 	// important because these can be separate into multiple rows
-	fkMap := make(map[string]FKInfo)
+	// fkMap := make(map[string]FKInfo)
+	fks = make(map[string]FKInfo)
 	unMap := make(map[string][]string)
 
 	for row := range rowsChan {
@@ -172,22 +173,67 @@ func QueryConstraints(db *sql.DB, table string) (pks []string, fks []FKInfo, uns
 
 		// append to the correspondent foreign key constraint
 		case 'R':
-			info := fkMap[constraintName]
-			info.Table = table
-			info.ForeignTable = fkTable
+			info := fks[fkTable]
 			info.Columns = append(info.Columns, columnName)
 			info.ForeignColumns = append(info.ForeignColumns, fkColumn)
-			fkMap[constraintName] = info
+			fks[fkTable] = info
 		}
 	}
 
-	// convert the maps to slices
-	for _, v := range fkMap {
-		fks = append(fks, v)
-	}
 	for _, v := range unMap {
 		uns = append(uns, v)
 	}
 
 	return pks, fks, uns, nil
+}
+
+func QueryColumnNames(db *sql.DB, table string) ([]string, error) {
+	query := `SELECT COLUMN_NAME FROM USER_TAB_COLS
+	WHERE TABLE_NAME = (:t)
+	ORDER BY COLUMN_ID`
+
+	rows, err := db.Query(query, table)
+	if err != nil {
+		return nil, err
+	}
+	var cols []string
+	var col string
+	for rows.Next() {
+		err := rows.Scan(&col)
+		if err != nil {
+			continue
+		}
+		cols = append(cols, col)
+	}
+
+	return cols, nil
+}
+
+func (t *DependencyTree) QueryForAll(table *TableNode) string {
+	var buf bytes.Buffer
+	buf.WriteString("SELECT * FROM ")
+	buf.WriteString(table.Name)
+
+	for _, embedded := range table.Embedded {
+		buf.WriteString(" LEFT JOIN ")
+		buf.WriteString(embedded.Name)
+		buf.WriteString(" ON")
+
+		fk := t.Prepared.FKs[table.Name][embedded.Name]
+		sep := " "
+		for i := 0; i < len(fk.Columns); i++ {
+			buf.WriteString(sep)
+			buf.WriteString(table.Name)
+			buf.WriteRune('.')
+			buf.WriteString(fk.Columns[i])
+			buf.WriteString(" = ")
+			buf.WriteString(embedded.Name)
+			buf.WriteRune('.')
+			buf.WriteString(fk.ForeignColumns[i])
+
+			sep = " AND "
+		}
+	}
+
+	return buf.String()
 }

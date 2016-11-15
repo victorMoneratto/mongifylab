@@ -23,22 +23,20 @@ func main() {
 }
 
 // Some globals because I'm tired
+var overlay gxui.BubbleOverlay
 var labelFont gxui.Font
 var tree gxui.Tree
 var list gxui.DropDownList
+var table gxui.TableLayout
 
+var db *sql.DB
 var dependencies *mongifylab.DependencyTree
 
 func application(driver gxui.Driver) {
 	// Connect to Oracle
 	connString := os.Getenv("ORA_CONN_STRING")
-	db, err := sql.Open("ora", connString)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	// List relevant tables
-	tables, err := mongifylab.ListTables(db)
+	var err error
+	db, err = sql.Open("ora", connString)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -46,7 +44,7 @@ func application(driver gxui.Driver) {
 	dependencies = mongifylab.NewDependencyTree(db)
 
 	theme := dark.CreateTheme(driver)
-	overlay := theme.CreateBubbleOverlay()
+	overlay = theme.CreateBubbleOverlay()
 	labelFont, err = driver.CreateFont(gxfont.Default, 18)
 	if err != nil {
 		log.Println(err)
@@ -56,7 +54,7 @@ func application(driver gxui.Driver) {
 	layout := theme.CreateLinearLayout()
 	layout.SetDirection(gxui.LeftToRight)
 	layout.AddChild(newTree(theme))
-	layout.AddChild(newPanel(theme, driver, overlay, tables))
+	layout.AddChild(newPanel(theme, driver))
 
 	window := theme.CreateWindow(960, 540, "Mongify")
 	window.AddChild(layout)
@@ -97,7 +95,7 @@ func newTree(theme gxui.Theme) gxui.Control {
 	return tree
 }
 
-func newPanel(theme gxui.Theme, driver gxui.Driver, overlay gxui.BubbleOverlay, tables []string) gxui.Control {
+func newPanel(theme gxui.Theme, driver gxui.Driver) gxui.Control {
 	//
 	// Tables list and buttons
 	//
@@ -105,26 +103,22 @@ func newPanel(theme gxui.Theme, driver gxui.Driver, overlay gxui.BubbleOverlay, 
 	listLabel.SetText("Table:")
 	listLabel.SetFont(labelFont)
 
-	adapter := gxui.CreateDefaultAdapter()
-	adapter.SetSize(math.Size{W: math.MaxSize.W, H: 20})
-	adapter.SetItems(tables)
-
 	list = theme.CreateDropDownList()
-	list.SetAdapter(adapter)
+	list.SetAdapter(NewListAdapter())
 	list.SetBubbleOverlay(overlay)
 	list.SetMargin(math.CreateSpacing(5))
 
-	table := theme.CreateTableLayout()
-	table.SetGrid(12, 10)
-	table.SetChildAt(0, 0, 1, 1, listLabel)
-	table.SetChildAt(1, 0, 11, 1, list)
+	table = theme.CreateTableLayout()
+	table.SetGrid(17, 20)
+	table.SetChildAt(0, 0, 2, 2, listLabel)
+	table.SetChildAt(2, 0, 15, 2, list)
 
 	addSimple := theme.CreateButton()
 	addSimple.SetText("Simple")
 	addSimple.SetHorizontalAlignment(gxui.AlignCenter)
 	addSimple.OnClick(func(gxui.MouseEvent) {
 		if selected := list.Selected(); selected != nil {
-			addDependency(selected.(string), mongifylab.Simple)
+			addDependency(selected.(string), mongifylab.SimpleTransform)
 		}
 	})
 
@@ -133,7 +127,7 @@ func newPanel(theme gxui.Theme, driver gxui.Driver, overlay gxui.BubbleOverlay, 
 	addReferenced.SetHorizontalAlignment(gxui.AlignCenter)
 	addReferenced.OnClick(func(gxui.MouseEvent) {
 		if selected := list.Selected(); selected != nil {
-			addDependency(selected.(string), mongifylab.Referenced)
+			addDependency(selected.(string), mongifylab.ReferencedTransform)
 		}
 	})
 
@@ -142,7 +136,7 @@ func newPanel(theme gxui.Theme, driver gxui.Driver, overlay gxui.BubbleOverlay, 
 	addEmbedded.SetHorizontalAlignment(gxui.AlignCenter)
 	addEmbedded.OnClick(func(gxui.MouseEvent) {
 		if selected := list.Selected(); selected != nil {
-			addDependency(selected.(string), mongifylab.Embedded)
+			addDependency(selected.(string), mongifylab.EmbeddedTransform)
 		}
 	})
 
@@ -151,18 +145,36 @@ func newPanel(theme gxui.Theme, driver gxui.Driver, overlay gxui.BubbleOverlay, 
 	addNxN.SetHorizontalAlignment(gxui.AlignCenter)
 	addNxN.OnClick(func(gxui.MouseEvent) {
 		if selected := list.Selected(); selected != nil {
-			addDependency(selected.(string), mongifylab.NxN)
+			addDependency(selected.(string), mongifylab.NxNTransform)
 		}
 	})
 
 	// forward declaration
 	var code gxui.CodeEditor
 
+	// reset := theme.CreateButton()
+	// reset.SetText("Reset")
+	// reset.SetHorizontalAlignment(gxui.AlignCenter)
+	// reset.OnClick(func(gxui.MouseEvent) {
+	// 	dependencies.Clear()
+	// 	tree.Adapter().(*TableNodeAdapter).RemakeFromDependencies(dependencies)
+	// 	var tables []string
+	// 	copy(tables, dependencies.Prepared.Tables)
+	// 	list.Adapter().(*gxui.DefaultAdapter).SetItems(tables)
+	// 	list.Adapter().(*gxui.DefaultAdapter).DataReplaced()
+	// 	code.SetText("")
+	// })
+
+	recommended := theme.CreateButton()
+	recommended.SetText("Premade")
+	recommended.SetHorizontalAlignment(gxui.AlignCenter)
+
 	submit := theme.CreateButton()
 	submit.SetText("Go!")
 	submit.SetHorizontalAlignment(gxui.AlignCenter)
+	// submit.SetBorderPen(gxui.WhitePen)
 	submit.OnClick(func(gxui.MouseEvent) {
-		script, err := dependencies.MakeCollectionScript()
+		script, err := dependencies.CreateCollectionScript(db)
 		if err != nil {
 			log.Println(err)
 			return
@@ -170,19 +182,19 @@ func newPanel(theme gxui.Theme, driver gxui.Driver, overlay gxui.BubbleOverlay, 
 		code.SetText(script)
 	})
 
-	table.SetChildAt(1, 1, 2, 1, addSimple)
-	table.SetChildAt(3, 1, 2, 1, addReferenced)
-	table.SetChildAt(5, 1, 2, 1, addEmbedded)
-	table.SetChildAt(7, 1, 2, 1, addNxN)
-	table.SetChildAt(10, 1, 2, 1, submit)
+	table.SetChildAt(2, 2, 2, 1, addSimple)
+	table.SetChildAt(4, 2, 2, 1, addReferenced)
+	table.SetChildAt(6, 2, 2, 1, addEmbedded)
+	table.SetChildAt(8, 2, 2, 1, addNxN)
+	// table.SetChildAt(11, 2, 2, 1, reset)
+	table.SetChildAt(13, 2, 2, 1, recommended)
+	table.SetChildAt(15, 2, 2, 1, submit)
 
 	//
 	// Code
 	//
 	code = theme.CreateCodeEditor()
-	// codeLabel := theme.CreateLabel()
-	// codeLabel.SetFont(labelFont)
-	// codeLabel.SetText("Output:")
+	// code.(*gxui.Control).SetBorderPen(gxui.WhitePen)
 
 	copyClip := theme.CreateButton()
 	copyClip.SetText("Copy")
@@ -201,13 +213,21 @@ func newPanel(theme gxui.Theme, driver gxui.Driver, overlay gxui.BubbleOverlay, 
 		}
 	})
 
-	table.SetChildAt(1, 2, 11, 8, code)
+	table.SetChildAt(2, 3, 15, 17, code)
 	// table.SetChildAt(0, 2, 1, 1, codeLabel)
-	table.SetChildAt(0, 2, 1, 1, copyClip)
-	table.SetChildAt(0, 3, 1, 1, save)
+	table.SetChildAt(0, 3, 2, 1, copyClip)
+	table.SetChildAt(0, 4, 2, 1, save)
 
 	panel := theme.CreatePanelHolder()
 	panel.AddPanel(table, "Tables")
 
 	return panel
+}
+
+func NewListAdapter() gxui.ListAdapter {
+	adapter := gxui.CreateDefaultAdapter()
+	adapter.SetSize(math.Size{W: math.MaxSize.W, H: 20})
+	adapter.SetItems(dependencies.Prepared.Tables)
+	adapter.DataReplaced()
+	return adapter
 }
