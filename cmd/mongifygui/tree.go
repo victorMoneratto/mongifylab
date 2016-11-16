@@ -84,18 +84,34 @@ func (a *TableNodeAdapter) RemakeFromDependencies(dp *mongifylab.DependencyTree)
 	root := a.Root()
 	root.Children = nil
 	for _, dpRoot := range dp.Root {
-		a.addTable(root, dpRoot)
+		a.addTable(root, dpRoot, mongifylab.SimpleTransform)
 	}
 	a.DataChanged(true)
 }
 
-func (a *TableNodeAdapter) addTable(parent *TableNode, table *mongifylab.TableNode) {
-	node := parent.Add(table.Name)
+func (a *TableNodeAdapter) addTable(parent *TableNode, table *mongifylab.TableNode, mode mongifylab.TransformMode) {
+	prefix := ""
+	if mode == mongifylab.ReferencedTransform {
+		prefix = "-> "
+	}
+	node := parent.Add(prefix + table.Name)
+
 	for _, embedded := range table.Embedded {
-		a.addTable(node, embedded)
+		a.addTable(node, embedded, mongifylab.SimpleTransform)
 	}
 
 	for _, ref := range table.Referenced {
 		node.Add("-> " + ref)
+	}
+
+	for _, nxn := range table.NxNProxy {
+		nxnNode := node.Add("(N:N) " + nxn.Name)
+		for _, embedded := range nxn.Embedded {
+			a.addTable(nxnNode, embedded, mongifylab.SimpleTransform)
+		}
+
+		for _, ref := range nxn.Referenced {
+			nxnNode.Add("-> " + ref)
+		}
 	}
 }

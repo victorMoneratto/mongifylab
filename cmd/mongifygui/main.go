@@ -51,10 +51,14 @@ func application(driver gxui.Driver) {
 		labelFont = theme.DefaultFont()
 	}
 
-	layout := theme.CreateLinearLayout()
-	layout.SetDirection(gxui.LeftToRight)
-	layout.AddChild(newTree(theme))
-	layout.AddChild(newPanel(theme, driver))
+	tree := newTree(theme)
+	panelHolder := newPanelHolder(theme, driver)
+	layout := theme.CreateSplitterLayout()
+	layout.SetOrientation(gxui.Horizontal)
+	layout.AddChild(tree)
+	layout.AddChild(panelHolder)
+	layout.SetChildWeight(tree, 2)
+	layout.SetChildWeight(panelHolder, 7)
 
 	window := theme.CreateWindow(960, 540, "Mongify")
 	window.AddChild(layout)
@@ -95,7 +99,7 @@ func newTree(theme gxui.Theme) gxui.Control {
 	return tree
 }
 
-func newPanel(theme gxui.Theme, driver gxui.Driver) gxui.Control {
+func newPanelHolder(theme gxui.Theme, driver gxui.Driver) gxui.Control {
 	//
 	// Tables list and buttons
 	//
