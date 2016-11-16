@@ -210,30 +210,68 @@ func QueryColumnNames(db *sql.DB, table string) ([]string, error) {
 }
 
 func (t *DependencyTree) QueryForAll(table *TableNode) string {
-	var buf bytes.Buffer
-	buf.WriteString("SELECT * FROM ")
-	buf.WriteString(table.Name)
+	var colBuf, tableBuf bytes.Buffer
+	colBuf.WriteString("SELECT ")
+	t.writeColumns(&colBuf, t.Prepared.Cols[table.Name], table.Name, true)
+	tableBuf.WriteString(" FROM ")
+	tableBuf.WriteString(table.Name)
 
-	for _, embedded := range table.Embedded {
-		buf.WriteString(" LEFT JOIN ")
-		buf.WriteString(embedded.Name)
-		buf.WriteString(" ON")
+	t.writeJoinedTables(&colBuf, &tableBuf, table)
 
-		fk := t.Prepared.FKs[table.Name][embedded.Name]
+	return colBuf.String() + tableBuf.String()
+}
+
+func (t *DependencyTree) writeColumns(buf *bytes.Buffer, cols []string, table string, firstStuff bool) {
+	sep := ""
+	if !firstStuff {
+		sep = ", "
+	}
+	for _, col := range cols {
+		buf.WriteString(sep)
+		buf.WriteString(table)
+		buf.WriteRune('.')
+		buf.WriteString(col)
+		buf.WriteString(" AS \"")
+		buf.WriteString(table)
+		buf.WriteRune('.')
+		buf.WriteString(col)
+		buf.WriteRune('"')
+		sep = ", "
+	}
+}
+
+func (t *DependencyTree) writeJoinedTables(colBuf, tableBuf *bytes.Buffer, table *TableNode) {
+
+	writeTable := func(newTable string) {
+		tableBuf.WriteString(" LEFT JOIN ")
+		tableBuf.WriteString(newTable)
+		tableBuf.WriteString(" ON")
+
+		fk := t.Prepared.FKs[table.Name][newTable]
 		sep := " "
 		for i := 0; i < len(fk.Columns); i++ {
-			buf.WriteString(sep)
-			buf.WriteString(table.Name)
-			buf.WriteRune('.')
-			buf.WriteString(fk.Columns[i])
-			buf.WriteString(" = ")
-			buf.WriteString(embedded.Name)
-			buf.WriteRune('.')
-			buf.WriteString(fk.ForeignColumns[i])
+			tableBuf.WriteString(sep)
+			tableBuf.WriteString(table.Name)
+			tableBuf.WriteRune('.')
+			tableBuf.WriteString(fk.Columns[i])
+			tableBuf.WriteString(" = ")
+			tableBuf.WriteString(newTable)
+			tableBuf.WriteRune('.')
+			tableBuf.WriteString(fk.ForeignColumns[i])
 
 			sep = " AND "
 		}
 	}
 
-	return buf.String()
+	for _, embedded := range table.Embedded {
+		t.writeColumns(colBuf, t.Prepared.Cols[embedded.Name], embedded.Name, false)
+		writeTable(embedded.Name)
+		// colBuf.WriteString(", ")
+		t.writeJoinedTables(colBuf, tableBuf, embedded)
+	}
+
+	for _, referenced := range table.Referenced {
+		t.writeColumns(colBuf, t.Prepared.PKs[referenced], referenced, false)
+		writeTable(referenced)
+	}
 }

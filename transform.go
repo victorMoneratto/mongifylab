@@ -11,6 +11,7 @@ type DependencyTree struct {
 	Prepared struct {
 		Tables []string
 		Cols   map[string][]string          // Cols[TableName] = [Cols...]
+		PKs    map[string][]string          // PKs[TableName] = [PkCols...]
 		FKs    map[string]map[string]FKInfo // FKs[TableName][ForeignTable] = [ForeignKeys...]
 	}
 }
@@ -34,12 +35,14 @@ func NewDependencyTree(db *sql.DB) *DependencyTree {
 		return nil
 	}
 	t.Prepared.Tables = tables
+	t.Prepared.PKs = make(map[string][]string)
 	t.Prepared.FKs = make(map[string]map[string]FKInfo)
 	t.Prepared.Cols = make(map[string][]string)
 	for _, table := range tables {
 		//FKs
-		_, fks, _, err := QueryConstraints(db, table)
+		pks, fks, _, err := QueryConstraints(db, table)
 		if err == nil {
+			t.Prepared.PKs[table] = pks
 			t.Prepared.FKs[table] = fks
 		}
 
@@ -62,7 +65,8 @@ func (t *DependencyTree) Add(newTable string, mode TransformMode) {
 	added := false
 	if mode == EmbeddedTransform || mode == ReferencedTransform {
 		for _, table := range t.Tables {
-			added = t.recursiveAdd(table, newTable, mode)
+			thisAdded := t.recursiveAdd(table, newTable, mode)
+			added = added || thisAdded
 		}
 	}
 

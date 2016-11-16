@@ -22,7 +22,7 @@ func (t *DependencyTree) CreateCollectionScript(db *sql.DB) (string, error) {
 			return "", err
 		}
 		buf.WriteString(script)
-		buf.WriteString("])\n")
+		buf.WriteString("\n])\n")
 		sep = "\n"
 	}
 
@@ -31,15 +31,15 @@ func (t *DependencyTree) CreateCollectionScript(db *sql.DB) (string, error) {
 
 func (t *DependencyTree) toBSON(table *TableNode, db *sql.DB) (string, error) {
 	// Query all rows
-	rows, err := db.Query(t.QueryForAll(table))
+	query := t.QueryForAll(table)
+	fmt.Println(query)
+	rows, err := db.Query(query)
 	if err != nil {
 		return "", err
 	}
+	fmt.Println(rows.Columns())
 
-	cols, err := t.prepareColumns(db, table)
-	if err != nil {
-		return "", err
-	}
+	cols := t.prepareColumns(db, table, false)
 
 	rowMapChan, err := RowMapChan(rows)
 	if err != nil {
@@ -49,25 +49,27 @@ func (t *DependencyTree) toBSON(table *TableNode, db *sql.DB) (string, error) {
 	// for each row on the table
 	var buf bytes.Buffer
 	for rowMap := range rowMapChan {
+		buf.WriteString("\n\t")
 		sep := "{"
 		for _, col := range cols {
 			buf.WriteString(sep)
 			buf.WriteString(col.Bson(rowMap))
 			sep = ", "
 		}
-		buf.WriteString("}, ")
+		buf.WriteString("},")
 	}
 
 	return buf.String(), nil
 }
 
 type BsonColumn struct {
+	Table        string
 	Name         string
 	InnerColumns []*BsonColumn
 }
 
-func NewColumn(name string) *BsonColumn {
-	return &BsonColumn{Name: name}
+func NewColumn(table, name string) *BsonColumn {
+	return &BsonColumn{Table: table, Name: name}
 }
 
 func (c *BsonColumn) Bson(m map[string]interface{}) string {
@@ -82,7 +84,7 @@ func (c *BsonColumn) Bson(m map[string]interface{}) string {
 			sep = ", "
 		}
 		buf.WriteRune('}')
-	} else if value := m[c.Name]; value != nil {
+	} else if value := m[c.Table+"."+c.Name]; value != nil {
 		buf.WriteString(c.Name + ": ")
 		buf.WriteString(valueString(value))
 	}
@@ -90,25 +92,79 @@ func (c *BsonColumn) Bson(m map[string]interface{}) string {
 	return buf.String()
 }
 
-func (t *DependencyTree) prepareColumns(db *sql.DB, table *TableNode) ([]*BsonColumn, error) {
+func (t *DependencyTree) prepareColumns(db *sql.DB, table *TableNode, isEmbedded bool) []*BsonColumn {
 	var cols []*BsonColumn
-	pks, _, _, err := QueryConstraints(db, table.Name)
-	if err != nil {
-		return nil, err
+
+	pks := t.Prepared.PKs[table.Name]
+	fks := t.Prepared.FKs[table.Name]
+
+	embeddedCols := make(map[string]*TableNode) // embeddedCols[ColumnName] = ForeignTableNode
+	referencedCols := make(map[string]string)   // referencedCols[ColumnName] = ForeignTableName
+
+	for _, embedded := range table.Embedded {
+		if fk, found := fks[embedded.Name]; found {
+			for iCol := range fk.Columns {
+				embeddedCols[fk.Columns[iCol]] = embedded
+			}
+		}
 	}
 
-	id := NewColumn("_id")
-	cols = append(cols, id)
-	for _, pk := range pks {
-		id.InnerColumns = append(id.InnerColumns, NewColumn(pk))
+	for _, referenced := range table.Referenced {
+		if fk, found := fks[referenced]; found {
+			for iCol := range fk.Columns {
+				referencedCols[fk.Columns[iCol]] = referenced
+			}
+		}
+	}
+
+	written := make(map[string]bool) // written[ForeignTableName] = bool
+
+	PKParent := &cols
+	if !isEmbedded {
+		id := NewColumn("", "_id")
+		cols = append(cols, id)
+		PKParent = &id.InnerColumns
+	}
+
+	for _, pk := range t.Prepared.PKs[table.Name] {
+		t.prepareSingleColumn(db, PKParent, table.Name, pk, embeddedCols, referencedCols, written)
 	}
 
 	nonPks := removeDuplicate(t.Prepared.Cols[table.Name], pks)
 	for _, field := range nonPks {
-		cols = append(cols, NewColumn(field))
+		t.prepareSingleColumn(db, &cols, table.Name, field, embeddedCols, referencedCols, written)
 	}
 
-	return cols, nil
+	return cols
+}
+
+func (t *DependencyTree) prepareSingleColumn(db *sql.DB, parent *[]*BsonColumn, table, col string, embeddedCols map[string]*TableNode, referencedCols map[string]string, written map[string]bool) {
+	// embedded columns will be replaced with the whole other object
+	if embedded, found := embeddedCols[col]; found {
+		if !written[embedded.Name] {
+			written[embedded.Name] = true
+			embeddedCol := NewColumn("", embedded.Name)
+			embeddedCol.InnerColumns = t.prepareColumns(db, embedded, true)
+
+			*parent = append(*parent, embeddedCol)
+		}
+
+		// referenced columns will be replaced with a reference to the other object
+	} else if referenced, found := referencedCols[col]; found {
+		if !written[referenced] {
+			written[referenced] = true
+			referencedCol := NewColumn("", referenced)
+			for _, referPK := range t.Prepared.PKs[referenced] {
+				referencedCol.InnerColumns = append(referencedCol.InnerColumns, NewColumn(referenced, referPK))
+			}
+
+			*parent = append(*parent, referencedCol)
+		}
+
+		// column will be put plainly
+	} else {
+		*parent = append(*parent, NewColumn(table, col))
+	}
 }
 
 // writeFields writes 'COLUMN1: val1, COLUMN2: "val2"...}' to the buffer
