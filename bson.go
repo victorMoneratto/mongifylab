@@ -12,7 +12,7 @@ import (
 func (t *DependencyTree) CreateCollectionScript(db *sql.DB) (string, error) {
 	var buf bytes.Buffer
 	sep := ""
-	for _, table := range t.Tables {
+	for _, table := range t.Root {
 		buf.WriteString(sep)
 		buf.WriteString("/* " + table.Name + " */\n")
 		buf.WriteString("db.createCollection(\"" + table.Name + "\")\n")
@@ -32,12 +32,10 @@ func (t *DependencyTree) CreateCollectionScript(db *sql.DB) (string, error) {
 func (t *DependencyTree) toBSON(table *TableNode, db *sql.DB) (string, error) {
 	// Query all rows
 	query := t.QueryForAll(table)
-	fmt.Println(query)
 	rows, err := db.Query(query)
 	if err != nil {
 		return "", err
 	}
-	fmt.Println(rows.Columns())
 
 	cols := t.prepareColumns(db, table, false)
 

@@ -6,7 +6,12 @@ import (
 )
 
 type DependencyTree struct {
-	Tables TableNodes
+	Root TableNodes
+
+	// AddedTables is a map of all added tables. It is important because
+	// not everytime it is possible to add the table to the tree,
+	// but it may be added later, when new tables arrive and relate to it.
+	AddedTables []AddedTable
 
 	Prepared struct {
 		Tables []string
@@ -23,6 +28,11 @@ type TableNode struct {
 	NxNProxy   map[string]FKInfo // NxNProxy[RelationshipTable] = ForeignTable
 }
 
+type AddedTable struct {
+	Table *TableNode
+	Mode  TransformMode
+}
+
 func NewTableNode(name string) *TableNode {
 	return &TableNode{Name: name}
 }
@@ -30,6 +40,7 @@ func NewTableNode(name string) *TableNode {
 func NewDependencyTree(db *sql.DB) *DependencyTree {
 	t := &DependencyTree{}
 
+	// Prepare database data
 	tables, err := ListTables(db)
 	if err != nil {
 		return nil
@@ -57,39 +68,56 @@ func NewDependencyTree(db *sql.DB) *DependencyTree {
 }
 
 func (t *DependencyTree) Clear() {
-	t.Tables = nil
+	t.Root = nil
 }
 
-func (t *DependencyTree) Add(newTable string, mode TransformMode) {
+func (t *DependencyTree) Add(newTableName string, mode TransformMode) {
+	newTable := NewTableNode(newTableName)
+	t.AddedTables = append(t.AddedTables, AddedTable{Table: newTable, Mode: mode})
+
+	for _, added := range t.AddedTables {
+		t.addPreviousTables(mode, added, newTable)
+	}
+
 	// Other must know of newTable
-	added := false
-	if mode == EmbeddedTransform || mode == ReferencedTransform {
-		for _, table := range t.Tables {
-			thisAdded := t.recursiveAdd(table, newTable, mode)
-			added = added || thisAdded
+	if mode != SimpleTransform {
+		for _, table := range t.Root {
+			t.recursiveAdd(table, newTable, mode)
 		}
 	}
 
 	// newTable must be added as a top entity
-	if mode == SimpleTransform || mode == ReferencedTransform || !added {
-		t.Tables = append(t.Tables, NewTableNode(newTable))
-		sort.Sort(t.Tables)
+	if mode == SimpleTransform || mode == ReferencedTransform {
+		t.Root = append(t.Root, newTable)
+		sort.Sort(t.Root)
 	}
 }
 
-func (t *DependencyTree) recursiveAdd(table *TableNode, foreignTable string, mode TransformMode) bool {
-	_, found := t.Prepared.FKs[table.Name][foreignTable]
+func (t *DependencyTree) addPreviousTables(mode TransformMode, oldTable AddedTable, newTable *TableNode) {
+	if _, found := t.Prepared.FKs[newTable.Name][oldTable.Table.Name]; found {
+		switch oldTable.Mode {
+		case EmbeddedTransform:
+			newTable.Embedded = append(newTable.Embedded, oldTable.Table)
+
+		case ReferencedTransform:
+			newTable.Referenced = append(newTable.Referenced, oldTable.Table.Name)
+		}
+	}
+}
+
+func (t *DependencyTree) recursiveAdd(table *TableNode, foreignNode *TableNode, mode TransformMode) bool {
+	_, found := t.Prepared.FKs[table.Name][foreignNode.Name]
 	if found {
 		switch mode {
 		case ReferencedTransform:
-			table.Referenced = append(table.Referenced, foreignTable)
+			table.Referenced = append(table.Referenced, foreignNode.Name)
 		case EmbeddedTransform:
-			table.Embedded = append(table.Embedded, NewTableNode(foreignTable))
+			table.Embedded = append(table.Embedded, foreignNode)
 		}
 	}
 
 	for _, embedded := range table.Embedded {
-		ret := t.recursiveAdd(embedded, foreignTable, mode)
+		ret := t.recursiveAdd(embedded, foreignNode, mode)
 		found = found || ret
 	}
 
