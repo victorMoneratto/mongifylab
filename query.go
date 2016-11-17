@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"database/sql"
 	"log"
+	"strconv"
 )
 
 // ListTables returns all relevant tables
@@ -274,4 +275,26 @@ func (t *DependencyTree) writeJoinedTables(colBuf, tableBuf *bytes.Buffer, table
 		t.writeColumns(colBuf, t.Prepared.PKs[referenced], referenced, false)
 		writeTable(referenced)
 	}
+}
+
+func QueryNxN(cols []string, nxn string) string {
+	var buf bytes.Buffer
+	buf.WriteString("SELECT * FROM ")
+	buf.WriteString(nxn)
+	buf.WriteString(" WHERE")
+
+	sep := " "
+	param := 1
+	for _, col := range cols {
+		buf.WriteString(sep)
+		buf.WriteString(col)
+		buf.WriteString(" = (:")
+		buf.WriteString(strconv.Itoa(param))
+		buf.WriteString(")")
+
+		sep = " AND "
+		param++
+	}
+
+	return buf.String()
 }
