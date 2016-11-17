@@ -51,9 +51,11 @@ func (t *DependencyTree) toBSON(table *TableNode, db *sql.DB) (string, error) {
 		buf.WriteString("\n\t")
 		sep := "{"
 		for _, col := range cols {
-			buf.WriteString(sep)
-			buf.WriteString(t.Bson(col, db, rowMap))
-			sep = ", "
+			if str := t.Bson(col, db, rowMap); str != "" {
+				buf.WriteString(sep)
+				buf.WriteString(str)
+				sep = ", "
+			}
 		}
 		buf.WriteString("},")
 	}
@@ -95,21 +97,33 @@ func (t *DependencyTree) Bson(c *BsonColumn, db *sql.DB, m map[string]interface{
 			log.Println(err)
 			return ""
 		}
-		buf.WriteString(c.Name)
-		buf.WriteString(": [")
+
+		nxnWritten := false
 		for nxnMap := range nxnChan {
-			buf.WriteString("{")
-			sep := ""
+			sep := "{"
 			for col, val := range nxnMap {
-				buf.WriteString(sep)
-				buf.WriteString(col)
-				buf.WriteString(": ")
-				buf.WriteString(valueString(val))
-				sep = ", "
+				if str := valueString(val); val != nil && str != "" {
+					if !nxnWritten {
+						nxnWritten = true
+						buf.WriteString(c.Name)
+						buf.WriteString(": [")
+					}
+
+					buf.WriteString(sep)
+					buf.WriteString(col)
+					buf.WriteString(": ")
+					buf.WriteString(str)
+					sep = ", "
+				}
 			}
-			buf.WriteString("}, ")
+			if nxnWritten {
+				buf.WriteString("}, ")
+			}
+
 		}
-		buf.WriteString("]")
+		if nxnWritten {
+			buf.WriteString("]")
+		}
 
 	} else if len(c.InnerColumns) > 0 {
 		written := false
@@ -143,7 +157,6 @@ func (t *DependencyTree) prepareColumns(db *sql.DB, table *TableNode, isEmbedded
 
 	embeddedCols := make(map[string]*TableNode) // embeddedCols[ColumnName] = ForeignTableNode
 	referencedCols := make(map[string]string)   // referencedCols[ColumnName] = ForeignTableName
-	nxnCols := make(map[string]bool)
 
 	for _, embedded := range table.Embedded {
 		if fk, found := fks[embedded.Name]; found {
@@ -161,12 +174,6 @@ func (t *DependencyTree) prepareColumns(db *sql.DB, table *TableNode, isEmbedded
 		}
 	}
 
-	for _, nxn := range table.NxNProxy {
-		if _, found := t.Prepared.FKs[nxn.Name][table.Name]; found {
-			nxnCols[nxn.Name] = true
-		}
-	}
-
 	written := make(map[string]bool) // written[ForeignTableName] = bool
 
 	PKParent := &cols
@@ -177,19 +184,28 @@ func (t *DependencyTree) prepareColumns(db *sql.DB, table *TableNode, isEmbedded
 	}
 
 	for _, pk := range t.Prepared.PKs[table.Name] {
-		t.prepareSingleColumn(db, PKParent, table.Name, pk, embeddedCols, referencedCols, nil, written)
+		t.prepareSingleColumn(db, PKParent, table.Name, pk, embeddedCols, referencedCols, written)
 	}
 
 	nonPks := removeDuplicate(t.Prepared.Cols[table.Name], pks)
 	for _, field := range nonPks {
-		t.prepareSingleColumn(db, &cols, table.Name, field, embeddedCols, referencedCols, nxnCols, written)
+		t.prepareSingleColumn(db, &cols, table.Name, field, embeddedCols, referencedCols, written)
+	}
+
+	// nxn columns will be replaced with an array with multiple object values
+	if len(table.NxNProxy) > 0 {
+		nxn := table.NxNProxy[0]
+		nxnCol := NewColumn(table.Name, nxn.Name)
+		nxnCol.IsArray = true
+		cols = append(cols, nxnCol)
 	}
 
 	return cols
 }
 
 func (t *DependencyTree) prepareSingleColumn(db *sql.DB, parent *[]*BsonColumn, table, col string, embeddedCols map[string]*TableNode,
-	referencedCols map[string]string, nxnCols map[string]bool, written map[string]bool) {
+	referencedCols map[string]string, written map[string]bool) {
+
 	// embedded columns will be replaced with the whole other object
 	if embedded, found := embeddedCols[col]; found {
 		if !written[embedded.Name] {
@@ -214,12 +230,6 @@ func (t *DependencyTree) prepareSingleColumn(db *sql.DB, parent *[]*BsonColumn, 
 		// column will be put plainly
 	} else {
 		*parent = append(*parent, NewColumn(table, col))
-	}
-
-	for col := range nxnCols {
-		nxnCol := NewColumn(table, col)
-		nxnCol.IsArray = true
-		*parent = append(*parent, nxnCol)
 	}
 }
 
