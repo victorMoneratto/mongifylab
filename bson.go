@@ -30,6 +30,39 @@ func (t *DependencyTree) CreateCollectionScript(db *sql.DB) (string, error) {
 	return buf.String(), nil
 }
 
+func (t *DependencyTree) CreateIndexScript() string {
+	var buf bytes.Buffer
+
+	for _, table := range t.Root {
+		written := false
+		for _, un := range t.Prepared.UNs[table.Name] {
+			sep := ""
+			for _, field := range un {
+				if !written {
+					written = true
+					buf.WriteString("/* ")
+					buf.WriteString(table.Name)
+					buf.WriteString(" */\n")
+					buf.WriteString("db.")
+					buf.WriteString(table.Name)
+					buf.WriteString(".createIndex({")
+				}
+
+				buf.WriteString(sep)
+				buf.WriteString(field)
+				buf.WriteString(": 1")
+				sep = ", "
+			}
+			buf.WriteString("})\n")
+		}
+		if written {
+			buf.WriteString("\n")
+		}
+	}
+
+	return buf.String()
+}
+
 func (t *DependencyTree) toBSON(table *TableNode, db *sql.DB) (string, error) {
 	// Query all rows
 	query := t.QueryForAll(table)

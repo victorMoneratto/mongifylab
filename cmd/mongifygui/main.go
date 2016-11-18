@@ -178,12 +178,13 @@ func newPanelHolder(theme gxui.Theme, driver gxui.Driver) gxui.Control {
 	submit.SetHorizontalAlignment(gxui.AlignCenter)
 	// submit.SetBorderPen(gxui.WhitePen)
 	submit.OnClick(func(gxui.MouseEvent) {
-		script, err := dependencies.CreateCollectionScript(db)
+		insert, err := dependencies.CreateCollectionScript(db)
 		if err != nil {
 			log.Println(err)
 			return
 		}
-		code.SetText(script)
+		index := dependencies.CreateIndexScript()
+		code.SetText(insert + "\n/* Indexes */\n" + index)
 	})
 
 	table.SetChildAt(2, 2, 2, 1, addSimple)

@@ -19,6 +19,7 @@ type DependencyTree struct {
 		Tables []string
 		Cols   map[string][]string          // Cols[TableName] = [Cols...]
 		PKs    map[string][]string          // PKs[TableName] = [PkCols...]
+		UNs    map[string][][]string        // UNs[TableName] = [[UNCols...]]
 		FKs    map[string]map[string]FKInfo // FKs[TableName][ForeignTable] = [ForeignKeys...]
 	}
 }
@@ -49,14 +50,16 @@ func NewDependencyTree(db *sql.DB) *DependencyTree {
 		return nil
 	}
 	t.Prepared.Tables = tables
-	t.Prepared.PKs = make(map[string][]string)
-	t.Prepared.FKs = make(map[string]map[string]FKInfo)
 	t.Prepared.Cols = make(map[string][]string)
+	t.Prepared.PKs = make(map[string][]string)
+	t.Prepared.UNs = make(map[string][][]string)
+	t.Prepared.FKs = make(map[string]map[string]FKInfo)
 	for _, table := range tables {
 		//FKs
-		pks, fks, _, err := QueryConstraints(db, table)
+		pks, fks, uns, err := QueryConstraints(db, table)
 		if err == nil {
 			t.Prepared.PKs[table] = pks
+			t.Prepared.UNs[table] = append(t.Prepared.UNs[table], uns...)
 			t.Prepared.FKs[table] = fks
 		}
 
