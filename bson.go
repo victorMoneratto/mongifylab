@@ -138,6 +138,7 @@ func (t *DependencyTree) Bson(c *BsonColumn, db *sql.DB, m map[string]interface{
 				if str := valueString(val); val != nil && str != "" {
 					if !nxnWritten {
 						nxnWritten = true
+						buf.WriteString("\n\t\t")
 						buf.WriteString(c.Name)
 						buf.WriteString(": [")
 					}
