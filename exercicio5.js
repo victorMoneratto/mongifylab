@@ -57,7 +57,7 @@ function findOne() {
 
 if(typeof db !== 'undefined') {
     
-    for (var times = 100; times <= 1000000; times *= 10) {
+    for (var times = 100; times <= 100000; times *= 10) {
         cache = []; 
         db.createCollection('benchmark');
         // db.benchmark.createIndex({param1: 1});
