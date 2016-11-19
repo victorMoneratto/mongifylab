@@ -23,7 +23,7 @@ func main() {
 }
 
 // Some globals because I'm tired
-var overlay gxui.BubbleOverlay
+var overlays []gxui.BubbleOverlay
 var labelFont gxui.Font
 var tree gxui.Tree
 var list gxui.DropDownList
@@ -44,15 +44,17 @@ func application(driver gxui.Driver) {
 	dependencies = mongifylab.NewDependencyTree(db)
 
 	theme := dark.CreateTheme(driver)
-	overlay = theme.CreateBubbleOverlay()
+	overlays = []gxui.BubbleOverlay{theme.CreateBubbleOverlay()}
 	labelFont, err = driver.CreateFont(gxfont.Default, 18)
 	if err != nil {
 		log.Println(err)
 		labelFont = theme.DefaultFont()
 	}
 
+	window := theme.CreateWindow(960, 540, "Mongify")
 	tree := newTree(theme)
 	panelHolder := newPanelHolder(theme, driver)
+	panelHolder.AddPanel(newQueryPanel(window, theme, driver), "Query")
 	layout := theme.CreateSplitterLayout()
 	layout.SetOrientation(gxui.Horizontal)
 	layout.AddChild(tree)
@@ -60,9 +62,10 @@ func application(driver gxui.Driver) {
 	layout.SetChildWeight(tree, 2)
 	layout.SetChildWeight(panelHolder, 7)
 
-	window := theme.CreateWindow(960, 540, "Mongify")
 	window.AddChild(layout)
-	window.AddChild(overlay)
+	for _, overlay := range overlays {
+		window.AddChild(overlay)
+	}
 	window.SetPadding(math.CreateSpacing(10))
 	window.OnClose(func() {
 		db.Close()
@@ -99,7 +102,7 @@ func newTree(theme gxui.Theme) gxui.Control {
 	return tree
 }
 
-func newPanelHolder(theme gxui.Theme, driver gxui.Driver) gxui.Control {
+func newPanelHolder(theme gxui.Theme, driver gxui.Driver) gxui.PanelHolder {
 	//
 	// Tables list and buttons
 	//
@@ -109,7 +112,7 @@ func newPanelHolder(theme gxui.Theme, driver gxui.Driver) gxui.Control {
 
 	list = theme.CreateDropDownList()
 	list.SetAdapter(NewListAdapter())
-	list.SetBubbleOverlay(overlay)
+	list.SetBubbleOverlay(overlays[0])
 	list.SetMargin(math.CreateSpacing(5))
 
 	table = theme.CreateTableLayout()

@@ -70,6 +70,7 @@ func (t *DependencyTree) toBSON(table *TableNode, db *sql.DB) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	// log.Println(query)
 
 	cols := t.prepareColumns(db, table, false)
 
@@ -300,4 +301,58 @@ func removeDuplicate(columns, pks []string) []string {
 	}
 
 	return nonPks
+}
+
+type QueryInput struct {
+	Operator string
+	Text     string
+}
+
+func (t *DependencyTree) CreateFindScript(table string, conditions map[string]QueryInput) string {
+	var buf bytes.Buffer
+
+	buf.WriteString("db.")
+	buf.WriteString(table)
+	buf.WriteString(".find({$or: {")
+
+	sep := ""
+	for field, condition := range conditions {
+		var op string
+		switch condition.Operator {
+		case "=":
+			op = "$eq"
+		case ">":
+			op = "$gt"
+		case ">=":
+			op = "$gte"
+		case "<":
+			op = "$lt"
+		case "<=":
+			op = "$lte"
+		case "!=":
+			op = "$ne"
+		case "in":
+			op = "$in"
+		case "nin":
+			op = "$nin"
+		case "exists":
+			op = "$exists"
+		case "type":
+			op = "$type"
+		}
+
+		buf.WriteString(sep)
+		buf.WriteString(field)
+		buf.WriteString(": {")
+		buf.WriteString(op)
+		buf.WriteString(": ")
+		buf.WriteString(condition.Text)
+		buf.WriteString("}")
+
+		sep = ", "
+	}
+
+	buf.WriteString("}})")
+
+	return buf.String()
 }

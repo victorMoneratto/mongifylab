@@ -53,18 +53,14 @@ function findOne() {
     db.benchmark.find(query);
 }
 
-function benchmark(times) {
-    
-}
-
 
 
 if(typeof db !== 'undefined') {
     
-    // for (var times = 100; times <= 1000000; times *= 10) {
+    for (var times = 100; times <= 1000000; times *= 10) {
         cache = []; 
         db.createCollection('benchmark');
-        db.benchmark.createIndex({param1: 1});
+        // db.benchmark.createIndex({param1: 1});
 
         var times = 100;
         var insertStart = new Date();
@@ -83,5 +79,5 @@ if(typeof db !== 'undefined') {
         print(times + " finds: " + (findEnd - findStart) / 1000 + "s");
 
         db.benchmark.drop();
-    // }
+    }
 }
